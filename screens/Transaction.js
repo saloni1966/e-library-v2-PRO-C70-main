@@ -69,22 +69,39 @@ export default class TransactionScreen extends Component {
     var { bookId,studentId } = this.state;
     await this.getBookDetails(bookId);
     await this.getStudentDetails(studentId);
-    db.collection("books")
-      .doc(bookId)
-      .get()
-      .then(doc => {
-        var book = doc.data();
-        if (book.book_availability) {
-          var {bookName,studentName} = this.state
-          this.initiateBookIssue(bookId, studentId,bookName ,studentName);
-          alert("book issued to the student");
-        } else {
-          var {bookName,studentName} = this.state
-          this.initiateBookReturn(bookId,studentId,bookName ,studentName);
-          alert("book return to the student");
-        }
-      });
+
+    var transactionType = await this.checkBookAvailability(bookId)
+
+    if (!transactionType) {
+      this.setState({
+        bookId: '',
+        studentId :''
+      })
+      //android user
+      //ToastAndroid.show("The book doesn't exist in the library" , ToastAndroid.SHORT)
+      alert("The book doesn't exist in the library")
+      
+    } else if (transactionType === 'issue') {
+      var isEligible = await this.checkStudentEligibilityForBookIssue(studentId)
+      if (isEligible) {
+        var {bookName,studentName} = this.state
+        this.initiateBookIssue(bookId, studentId, bookName, studentName);
+        alert("book issued to the student");
+      }
+      
+    
+      
+    } else {
+      var isEligible = await this.checkStudentEligibilityForBookReturn(bookId, studentId);
+      if (isEligible) {
+        var { bookName, studentName } = this.state
+        this.initiateBookReturn(bookId, studentId, bookName, studentName);
+        alert("book returned to the library");
+      }
+         
+    }
   };
+
   getBookDetails = (bookId) => {
     bookId = bookId.trim()
     db.collection('books')
@@ -114,7 +131,83 @@ export default class TransactionScreen extends Component {
      
     })
     
+  }
+
+  checkBookAvailability = async (bookId) => {
+    const bookRef = await db
+      .collection("books")
+      .where("book_Id", "==", bookId)
+      .get()
     
+    var transactionType = '' //false, issue,return
+
+    if (bookRef.docs.length == 0) {
+      transactionType = false
+    } else {
+      //await this.checkStudentEligibilityForBookIssue(studentId)
+      //await this.checkStudentEligibilityForBookReturn(bookId,studentId)
+      bookRef.docs.map(doc => {
+        transactionType = doc.data().book_availability ? "issue" : "return"
+      })
+    }
+
+    return transactionType
+  }
+
+  checkStudentEligibilityForBookIssue = async (studentId) => {
+    const studentRef = await db
+    .collection("students")
+    .where('student_Id', "==" , studentId)
+      .get()
+    var isStudentEligible = ''
+    if (studentRef.docs.length === 0) {
+      this.setState({
+        bookId : '',
+        studentId : ''
+      })
+      isStudentEligible = false
+      alert("The student id doesn't exist in the school")
+     
+    } else {
+      studentRef.docs.map(doc => {
+        if (doc.data().num_of_book_issued < 2) {
+          isStudentEligible = true;
+        } else {
+          isStudentEligible = false;
+          alert("the student  has already issued 2 books")
+          this.setState({
+            bookId: '',
+            studentId : ''
+          })
+        }
+      })
+      
+    }
+    return isStudentEligible
+    
+  }
+
+  checkStudentEligibilityForBookReturn = async (bookId, studentId) => {
+    const transactionRef = await db
+    .collection("transactions")
+      .where('book_id', "==", bookId)
+      .limit(1)
+      .get()
+      var isStudentEligible = ''
+      transactionRef.docs.map(doc => {
+        var lastBookTransaction = doc.data();
+        if (lastBookTransaction.student_id === studentId) {
+          isStudentEligible = true;
+        } else {
+          isStudentEligible = false;
+          alert('the book was not issued to the student')
+          this.setState({
+            bookId : '',
+            studentId : ''
+          })
+        }
+      })
+      return isStudentEligible
   }
 
   initiateBookIssue = async (bookId,studentId,bookName,studentName) => {
@@ -172,6 +265,7 @@ export default class TransactionScreen extends Component {
       studentId : ''
     })
   };
+
 
   render() {
     const { bookId, studentId, domState, scanned } = this.state;
