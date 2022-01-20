@@ -6,11 +6,14 @@ import {
   TouchableOpacity,
   Text,
   ImageBackground,
-  Image
+  Image,
+  Alert
 } from "react-native";
 import * as Permissions from "expo-permissions";
 import { BarCodeScanner } from "expo-barcode-scanner";
 import db from "../config";
+import firebase from 'firebase'
+
 
 const bgImage = require("../assets/background2.png");
 const appIcon = require("../assets/appIcon.png");
@@ -24,7 +27,9 @@ export default class TransactionScreen extends Component {
       studentId: "",
       domState: "normal",
       hasCameraPermissions: null,
-      scanned: false
+      scanned: false,
+      bookName: '',
+      studentName: ''
     };
   }
 
@@ -59,27 +64,113 @@ export default class TransactionScreen extends Component {
     }
   };
 
-  handleTransaction = () => {
-    var { bookId } = this.state;
+  handleTransaction = async () => {
+   // this.state.bookId
+    var { bookId,studentId } = this.state;
+    await this.getBookDetails(bookId);
+    await this.getStudentDetails(studentId);
     db.collection("books")
       .doc(bookId)
       .get()
       .then(doc => {
         var book = doc.data();
         if (book.book_availability) {
-          this.initiateBookIssue();
+          var {bookName,studentName} = this.state
+          this.initiateBookIssue(bookId, studentId,bookName ,studentName);
+          alert("book issued to the student");
         } else {
-          this.initiateBookReturn();
+          var {bookName,studentName} = this.state
+          this.initiateBookReturn(bookId,studentId,bookName ,studentName);
+          alert("book return to the student");
         }
       });
   };
+  getBookDetails = (bookId) => {
+    bookId = bookId.trim()
+    db.collection('books')
+      .where("book_Id", "==", bookId)
+      .get()
+      .then(snapshot => {
+        snapshot.docs.map(doc => {
+          this.setState({
+            bookName : doc.data().book_details.book_name
+          })
+        }   
+      )
+    })  
+  }
+  getStudentDetails = (studentId) => { 
+    studentId = studentId.trim()
+    db.collection('students')
+    .where("student_Id","==",studentId)
+    .get()
+    .then(snapshot => {
+      snapshot.docs.map(doc => {
+        this.setState({
+          studentName : doc.data().student_details.student_name
+        })
+      }   
+    )
+     
+    })
+    
+    
+  }
 
-  initiateBookIssue = () => {
-    console.log("Book issued to the student!");
+  initiateBookIssue = async (bookId,studentId,bookName,studentName) => {
+    //add a transaction
+    var { bookId,studentId,studentName,studentId } = this.state;
+    db.collection("transactions")
+      .add({
+        student_id: studentId,
+        student_name: studentName,
+        book_id: bookId,
+        book_name: bookName,
+        date: firebase.firestore.Timestamp.now().toDate(),
+        tracnsaction_type : 'issue'
+      })
+    db.collection('books')
+      .doc(bookId)
+      .update({
+      book_availability : false
+      })
+    db.collection('students')
+      .doc(studentId)
+      .update({
+      num_of_book_issued : firebase.firestore.FieldValue.increment(1)
+      })
+    this.setState({
+      bookId: '',
+      studentId : ''
+    })
   };
 
-  initiateBookReturn = () => {
-    console.log("Book returned to the library!");
+  initiateBookReturn = async (bookId,studentId,bookName,studentName) => {
+    //add a transaction
+    var { bookId,studentId,studentName,studentId } = this.state;
+    db.collection("transactions")
+      .add({
+        student_id: studentId,
+        student_name: studentName,
+        book_id: bookId,
+        book_name: bookName,
+        date: firebase.firestore.Timestamp.now().toDate(),
+        tracnsaction_type : 'return'
+      })
+    db.collection('books')
+      .doc(bookId)
+      .update({
+      book_availability : true
+      })
+    db.collection('students')
+      .doc(studentId)
+      .update({
+      num_of_book_issued : firebase.firestore.FieldValue.increment(-1)
+      })
+    this.setState({
+      bookId: '',
+      studentId : ''
+    })
   };
 
   render() {
